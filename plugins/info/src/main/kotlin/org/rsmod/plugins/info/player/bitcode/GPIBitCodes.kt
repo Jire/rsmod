@@ -1,16 +1,17 @@
 package org.rsmod.plugins.info.player.bitcode
 
-import org.rsmod.plugins.info.buffer.BitBuffer
+import org.rsmod.plugins.info.buffer.IBitBuffer
 import org.rsmod.plugins.info.model.coord.HighResCoord
 import org.rsmod.plugins.info.model.coord.LowResCoord
+import org.rsmod.plugins.info.player.client.Avatar
 
 internal object GPIBitCodes {
 
-    fun BitBuffer.putHighResUpdate(
+    fun IBitBuffer.putHighResUpdate(
         extended: Boolean,
         currCoords: HighResCoord,
         prevCoords: HighResCoord
-    ): BitBuffer {
+    ): IBitBuffer {
         putBoolean(true)
         putBoolean(extended)
         val diff = currCoords - prevCoords
@@ -47,7 +48,7 @@ internal object GPIBitCodes {
         return this
     }
 
-    fun BitBuffer.putHighToLowResChange(currCoords: LowResCoord, prevCoords: LowResCoord): BitBuffer {
+    fun IBitBuffer.putHighToLowResChange(currCoords: LowResCoord, prevCoords: LowResCoord): IBitBuffer {
         val updateLowResCoords = currCoords != prevCoords
         putBoolean(true)
         putBoolean(false)
@@ -74,15 +75,15 @@ internal object GPIBitCodes {
         return this
     }
 
-    fun BitBuffer.putLowResUpdate(currCoords: LowResCoord, prevCoords: LowResCoord): BitBuffer {
+    fun IBitBuffer.putLowResUpdate(currCoords: LowResCoord, prevCoords: LowResCoord): IBitBuffer {
         putBoolean(true)
         putLowResCoordsChange(currCoords, prevCoords)
         return this
     }
 
-    fun BitBuffer.putLowToHighResChange(currCoords: HighResCoord, prevCoords: HighResCoord): BitBuffer {
-        val lowResCurrCoords = currCoords.toLowRes()
-        val lowResPrevCoords = prevCoords.toLowRes()
+    fun IBitBuffer.putLowToHighResChange(other: Avatar): IBitBuffer {
+        val lowResCurrCoords = other.loCoords
+        val lowResPrevCoords = other.loPrevCoords
         val updateLowResCoords = lowResCurrCoords != lowResPrevCoords
         putBoolean(true)
         putBits(len = 2, value = 0)
@@ -90,12 +91,13 @@ internal object GPIBitCodes {
         if (updateLowResCoords) {
             putLowResCoordsChange(lowResCurrCoords, lowResPrevCoords)
         }
-        putBits(len = 13, value = currCoords.x)
-        putBits(len = 13, value = currCoords.z)
+        val coords = other.coords
+        putBits(len = 13, value = coords.x)
+        putBits(len = 13, value = coords.z)
         return this
     }
 
-    fun BitBuffer.putLowResCoordsChange(currCoords: LowResCoord, prevCoords: LowResCoord) {
+    fun IBitBuffer.putLowResCoordsChange(currCoords: LowResCoord, prevCoords: LowResCoord) {
         val diff = currCoords - prevCoords
         if (diff.x == 0 && diff.z == 0 && diff.level == 0) {
             putBits(len = 2, value = 0)
@@ -114,7 +116,7 @@ internal object GPIBitCodes {
         }
     }
 
-    fun BitBuffer.putSkipCount(count: Int) {
+    fun IBitBuffer.putSkipCount(count: Int) {
         putBoolean(false)
         when {
             count == 0 -> putBits(len = 2, value = 0)

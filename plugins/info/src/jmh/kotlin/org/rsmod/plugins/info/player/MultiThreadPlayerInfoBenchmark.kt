@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import net.openhft.chronicle.core.Jvm
 import org.openjdk.jmh.annotations.Benchmark
 import org.openjdk.jmh.annotations.BenchmarkMode
 import org.openjdk.jmh.annotations.Fork
@@ -44,6 +45,10 @@ abstract class MultiThreadPlayerInfoBenchmark(
 
     @Setup
     fun setup() {
+        Jvm.init()
+        System.setProperty("io.netty.buffer.checkAccessible", "false")
+        System.setProperty("io.netty.buffer.checkBounds", "false")
+
         info = PlayerInfo()
         bufs = Array(info.capacity) { ByteBuffer.allocate(bufCapacity) }
         staticExtInfo = ByteArray(CACHED_EXT_INFO_BUFFER_SIZE)
@@ -93,6 +98,8 @@ abstract class MultiThreadPlayerInfoBenchmark(
         }
     }
 
+    val buf: ByteBuffer = ByteBuffer.allocateDirect(bufCapacity)
+
     @Benchmark
     fun registerAndUpdateMaxHighResPlayersWithMovement(bh: Blackhole) = runBlocking {
         for (i in info.indices) {
@@ -111,4 +118,13 @@ abstract class MultiThreadPlayerInfoBenchmark(
             info.unregister(i)
         }
     }
+}
+
+fun main() {
+    val bench = MultiThreadBufLimited()
+    bench.setup()
+    val blackhole =
+        Blackhole("Today's password is swordfish. I understand instantiating Blackholes directly is dangerous.")
+    while (true)
+        bench.registerAndUpdateMaxHighResPlayersWithMovement(blackhole)
 }

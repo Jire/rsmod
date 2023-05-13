@@ -1,6 +1,10 @@
 package org.rsmod.plugins.info.player
 
+import io.netty.buffer.ByteBuf
+import io.netty.buffer.PooledByteBufAllocator
 import org.rsmod.plugins.info.buffer.BitBuffer
+import org.rsmod.plugins.info.buffer.FastBitBuf
+import org.rsmod.plugins.info.buffer.IBitBuffer
 import org.rsmod.plugins.info.buffer.SimpleBuffer
 import org.rsmod.plugins.info.buffer.isCapped
 import org.rsmod.plugins.info.model.coord.HighResCoord
@@ -29,8 +33,8 @@ private typealias ExtInfoBuffers = Array<SimpleBuffer>
 
 public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
 
-    public val capacity: Int get() = playerLimit + INDEX_PADDING
-    public val indices: IntRange get() = INDEX_PADDING until capacity
+    public val capacity: Int = playerLimit + INDEX_PADDING
+    public val indices: IntRange = INDEX_PADDING until capacity
 
     public val avatars: AvatarGroup = AvatarGroup(capacity)
     public val clients: ClientGroup = ClientGroup(capacity)
@@ -57,7 +61,9 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
         assert(avatars[playerIndex].isValid) { "Player(index=$playerIndex) was not registered." }
         val avatar = avatars[playerIndex]
         avatar.coords = coords
+        avatar.loCoords = coords.toLowRes()
         avatar.prevCoords = prevCoords
+        avatar.loPrevCoords = prevCoords.toLowRes()
     }
 
     public fun updateExtendedInfo(playerIndex: Int, data: ByteArray, length: Int = data.size) {
@@ -87,15 +93,59 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
     }
 
     public fun put(buf: ByteBuffer, playerIndex: Int, metadata: PlayerInfoMetadata = PlayerInfoMetadata()) {
+        if (true) {
+            buf.clear()
+            val bb = PooledByteBufAllocator.DEFAULT.directBuffer(buf.remaining(), buf.capacity())
+            try {
+                bb.writeBytes(buf)
+
+                put(bb, FastBitBuf(bb), playerIndex, metadata)
+
+                buf.clear()
+                buf.limit(bb.readableBytes())
+                bb.readBytes(buf)
+                buf.flip()
+            } finally {
+                bb.release()
+            }
+            return
+        }
+
+        oldPut(buf, playerIndex, metadata)
+    }
+
+    public fun oldPut(buf: ByteBuffer, playerIndex: Int, metadata: PlayerInfoMetadata = PlayerInfoMetadata()) {
         val avatar = avatars[playerIndex]
         val client = clients[playerIndex]
         buf.clear()
-        BitBuffer(buf).use { bitBuf -> bitBuf.putHighResolution(true, avatar.coords, client, metadata) }
-        BitBuffer(buf).use { bitBuf -> bitBuf.putHighResolution(false, avatar.coords, client, metadata) }
-        BitBuffer(buf).use { bitBuf -> bitBuf.putLowResolution(false, avatar.coords, client, metadata) }
-        BitBuffer(buf).use { bitBuf -> bitBuf.putLowResolution(true, avatar.coords, client, metadata) }
+        BitBuffer(buf).use { it.putHighResolution(true, avatar.coords, client, metadata) }
+        BitBuffer(buf).use { it.putHighResolution(false, avatar.coords, client, metadata) }
+        BitBuffer(buf).use { it.putLowResolution(false, avatar.coords, client, metadata) }
+        BitBuffer(buf).use { it.putLowResolution(true, avatar.coords, client, metadata) }
         buf.putExtendedInfo(metadata.extendedInfoCount, client.extendedInfoIndexes)
         buf.flip()
+        shift(client)
+        resize(client, metadata.highResolutionCount)
+    }
+
+    public fun put(
+        buf: ByteBuf,
+        bitBuf: IBitBuffer,
+        playerIndex: Int,
+        metadata: PlayerInfoMetadata = PlayerInfoMetadata()
+    ) {
+        val avatar = avatars[playerIndex]
+        val client = clients[playerIndex]
+        buf.clear()
+        bitBuf.reset()
+        bitBuf.use { it.putHighResolution(true, avatar.coords, client, metadata) }
+        bitBuf.reset()
+        bitBuf.use { it.putHighResolution(false, avatar.coords, client, metadata) }
+        bitBuf.reset()
+        bitBuf.use { it.putLowResolution(false, avatar.coords, client, metadata) }
+        bitBuf.reset()
+        bitBuf.use { it.putLowResolution(true, avatar.coords, client, metadata) }
+        buf.putExtendedInfo(metadata.extendedInfoCount, client.extendedInfoIndexes)
         shift(client)
         resize(client, metadata.highResolutionCount)
     }
@@ -123,7 +173,7 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
         }
     }
 
-    public fun BitBuffer.putHighResolution(
+    public fun IBitBuffer.putHighResolution(
         active: Boolean,
         coords: HighResCoord,
         client: Client,
@@ -143,7 +193,7 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
             if (other.isInvalid || !coords.inViewDistance(other.coords, viewDistance)) {
                 pendingResolutionChange[i] = true
                 metadata.highResolutionCount++
-                putHighToLowResChange(other.coords.toLowRes(), other.prevCoords.toLowRes())
+                putHighToLowResChange(other.loCoords, other.loPrevCoords)
                 continue
             }
             if (other.extendedInfoLength != 0) {
@@ -209,7 +259,7 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
         return skip
     }
 
-    public fun BitBuffer.putLowResolution(
+    public fun IBitBuffer.putLowResolution(
         active: Boolean,
         coords: HighResCoord,
         client: Client,
@@ -234,7 +284,7 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
                     // actual length. however - this avoids skipping around in memory.
                     // The above suggestion was benchmarked. It led to an approximate
                     // 25% performance degradation.
-                    val extendedLength = if (extendedBlock != null) CACHED_EXT_INFO_BUFFER_SIZE else null
+                    val extendedLength = if (extendedBlock == ExtendedInfoBlock.None) 0 else CACHED_EXT_INFO_BUFFER_SIZE
                     // The amount of bytes that can be written for the other low-res
                     // players left in the iteration. Note that this still takes
                     // high-res players into account.
@@ -242,7 +292,7 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
                     // players beforehand and feed it as an argument.
                     val possibleBytesLeft = (indices.last - i) * MAX_BYTES_PER_LOW_RES_PLAYER
                     if (
-                        extendedLength != null && extendedBlock != null &&
+                        extendedLength != 0 && extendedBlock != ExtendedInfoBlock.None &&
                         !isCapped(
                             metadata.extendedInfoLength + extendedLength + possibleBytesLeft,
                             CACHED_EXT_INFO_SAFETY_BUFFER
@@ -257,13 +307,13 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
                     }
                     pendingResolutionChange[i] = true
                     metadata.lowResolutionCount++
-                    putLowToHighResChange(other.coords, other.prevCoords)
+                    putLowToHighResChange(other)
                     putBoolean(updateExtendedInfo)
                     activityFlags[i] = (activityFlags[i].toInt() or ACTIVE_TO_INACTIVE_FLAG).toByte()
                     continue
                 }
-                val currLowResCoords = other.coords.toLowRes()
-                val prevLowResCoords = other.prevCoords.toLowRes()
+                val currLowResCoords = other.loCoords
+                val prevLowResCoords = other.loPrevCoords
                 if (currLowResCoords != prevLowResCoords) {
                     metadata.lowResolutionCount++
                     putLowResUpdate(currLowResCoords, prevLowResCoords)
@@ -301,7 +351,7 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
                 skip++
                 continue
             }
-            val update = other.coords.toLowRes() != other.prevCoords.toLowRes() ||
+            val update = other.loCoords != other.loPrevCoords ||
                 coords.inViewDistance(other.coords, client.viewDistance)
             if (update) break
             skip++
@@ -322,6 +372,19 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
                 else -> extendedHighRes[playerIndex]
             }
             put(buffer.data, 0, buffer.offset)
+        }
+    }
+
+    public fun ByteBuf.putExtendedInfo(count: Int, indexes: ShortArray) {
+        for (i in 0 until count) {
+            val offsetIndex = indexes[i].toInt()
+            val playerIndex = trimExtendedInfoIndex(offsetIndex)
+            val buffer = when {
+                isInitDynamicExtInfoIndex(offsetIndex) -> extendedInitDynamic[playerIndex]
+                isInitStaticExtInfoIndex(offsetIndex) -> extendedInitStatic[playerIndex]
+                else -> extendedHighRes[playerIndex]
+            }
+            writeBytes(buffer.data, 0, buffer.offset)
         }
     }
 
@@ -352,15 +415,28 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
         private const val MAX_BYTES_PER_LOW_RES_PLAYER = 4
 
         private fun HighResCoord.inViewDistance(other: HighResCoord, viewDistance: Int): Boolean {
-            return other.level == level &&
-                x - other.x in -viewDistance..viewDistance &&
-                z - other.z in -viewDistance..viewDistance
+            /*            return other.level == level &&
+                            x - other.x in -viewDistance..viewDistance &&
+                            z - other.z in -viewDistance..viewDistance*/
+            return level == other.level &&
+                deltaWithinDistance(x, other.x, viewDistance) &&
+                deltaWithinDistance(z, other.z, viewDistance)
         }
 
-        private fun Avatar.getExtendedInfoBlock(sourceExtInfoClock: Int): ExtendedInfoBlock? = when {
+        @Suppress("NOTHING_TO_INLINE")
+        private inline fun fastAbs(value: Int): Int {
+            val mask = value shr 31
+            return (value xor mask) - mask
+        }
+
+        private fun delta(a: Int, b: Int) = fastAbs(a - b)
+
+        private fun deltaWithinDistance(a: Int, b: Int, distance: Int) = delta(a, b) <= distance
+
+        private fun Avatar.getExtendedInfoBlock(sourceExtInfoClock: Int): ExtendedInfoBlock = when {
             sourceExtInfoClock == 0 -> ExtendedInfoBlock.InitStatic
             sourceExtInfoClock != dynamicExtInfoUpdateClock -> ExtendedInfoBlock.InitDynamic
-            else -> null
+            else -> ExtendedInfoBlock.None
         }
 
         @Suppress("FunctionName")

@@ -14,4 +14,6 @@ public sealed class ExtendedInfoBlock {
      * the info.
      */
     public object InitDynamic : ExtendedInfoBlock()
+
+    public object None : ExtendedInfoBlock()
 }

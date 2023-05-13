@@ -22,6 +22,7 @@ public class Client(
             val offset = when (block) {
                 ExtendedInfoBlock.InitStatic -> INIT_STATIC_EXT_INFO_START_INDEX
                 ExtendedInfoBlock.InitDynamic -> INIT_DYNAMIC_EXT_INFO_START_INDEX
+                else -> throw IllegalArgumentException()
             }
             return (offset + playerIndex).toShort()
         }

@@ -6,7 +6,7 @@ import kotlin.math.min
 /* BitBuf from OpenRS2 compatible with java.nio.ByteBuffer */
 public class BitBuffer(
     private val buf: ByteBuffer
-) : AutoCloseable {
+) : IBitBuffer {
     private var position: Int = buf.position() shl LOG_BITS_PER_BYTE
         private set(value) {
             field = value
@@ -124,33 +124,15 @@ public class BitBuffer(
         return this
     }
 
-    public fun putBoolean(value: Boolean): BitBuffer {
-        if (value) {
-            putBits(1, 1)
-        } else {
-            putBits(1, 0)
-        }
-
-        return this
-    }
-
     public fun putBit(value: Int): BitBuffer {
         putBits(1, value)
 
         return this
     }
 
-    public fun putBits(len: Int, value: Int): BitBuffer {
+    public override fun putBits(len: Int, value: Int) {
         setBits(position, len, value)
         position += len
-
-        return this
-    }
-
-    public fun putZero(len: Int): BitBuffer {
-        putBits(len, 0)
-
-        return this
     }
 
     private fun checkReadableBits(len: Int) {
@@ -173,7 +155,7 @@ public class BitBuffer(
         return maxCapacity() - position
     }
 
-    public fun capacity(): Long {
+    public override fun capacity(): Long {
         return buf.limit().toLong() shl LOG_BITS_PER_BYTE
     }
 
@@ -199,7 +181,7 @@ public class BitBuffer(
         return (position + len) <= capacity()
     }
 
-    public fun position(): Int {
+    public override fun position(): Int {
         return position
     }
 
@@ -231,10 +213,10 @@ public class BitBuffer(
         position = (position + MASK_BITS_PER_BYTE) and MASK_BITS_PER_BYTE.inv()
     }
 
-    private companion object {
-        private const val LOG_BITS_PER_BYTE = 3
-        private const val BITS_PER_BYTE = 1 shl LOG_BITS_PER_BYTE
-        private const val MASK_BITS_PER_BYTE = BITS_PER_BYTE - 1
+    public companion object {
+        public const val LOG_BITS_PER_BYTE: Int = 3
+        public const val BITS_PER_BYTE: Int = 1 shl LOG_BITS_PER_BYTE
+        public const val MASK_BITS_PER_BYTE: Int = BITS_PER_BYTE - 1
         private const val BITS_PER_INT = 32
     }
 }

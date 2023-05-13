@@ -9,6 +9,8 @@ plugins {
 
 dependencies {
     jmh(libs.kotlinCoroutinesCore)
+    implementation(libs.nettyBuffer)
+    implementation("net.openhft:chronicle-core:2.24ea13")
 }
 
 publishing {
