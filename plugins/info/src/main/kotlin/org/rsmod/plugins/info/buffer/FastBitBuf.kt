@@ -24,10 +24,12 @@ public class FastBitBuf(public val buf: ByteBuf) : IBitBuffer {
             buf.writerIndex((writerIndex shr LOG_BITS_PER_BYTE))
         }
 
+    private val baseAddress = buf.memoryAddress()
+
     public override fun putBits(len: Int, value: Int) {
         buf.ensureWritable(len)
 
-        setBitsMemory(writerIndex, len, value)
+        setBits(writerIndex, len, value)
         writerIndex += len
     }
 
@@ -35,7 +37,6 @@ public class FastBitBuf(public val buf: ByteBuf) : IBitBuffer {
         public const val LOG_BITS_PER_BYTE: Int = 3
         public const val BITS_PER_BYTE: Int = 1 shl LOG_BITS_PER_BYTE
         public const val MASK_BITS_PER_BYTE: Int = BITS_PER_BYTE - 1
-        private const val BITS_PER_INT = 32
 
         init {
             Jvm.init()
@@ -44,15 +45,15 @@ public class FastBitBuf(public val buf: ByteBuf) : IBitBuffer {
         public val m: Memory = OS.memory()
     }
 
-    public fun setBitsMemory(index: Int, len: Int, value: Int) {
+    public fun setBits(index: Int, len: Int, value: Int) {
         var remaining = len
         var byteIndex = index shr LOG_BITS_PER_BYTE
-        val bitIndex = index and MASK_BITS_PER_BYTE
 
         val m = m
-        val baseAddress = buf.memoryAddress()
+        val baseAddress = this.baseAddress
 
-        if (remaining > 0) {
+        if (true) {
+            val bitIndex = index and MASK_BITS_PER_BYTE
             val n = min(BITS_PER_BYTE - bitIndex, remaining)
             val shift = (BITS_PER_BYTE - (bitIndex + n)) and MASK_BITS_PER_BYTE
             val mask = (1 shl n) - 1
@@ -83,12 +84,6 @@ public class FastBitBuf(public val buf: ByteBuf) : IBitBuffer {
             remaining -= n
             byteIndex++
         }
-    }
-
-    public fun clear() {
-        /*readerIndex = 0
-        writerIndex = 0*/
-        buf.clear()
     }
 
     public override fun reset() {

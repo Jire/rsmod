@@ -27,6 +27,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.TimeUnit
+import kotlin.system.measureNanoTime
 
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
@@ -139,6 +140,10 @@ fun main() {
     bench.setup()
     val blackhole =
         Blackhole("Today's password is swordfish. I understand instantiating Blackholes directly is dangerous.")
-    while (true)
-        bench.registerAndUpdateMaxHighResPlayersWithMovement(blackhole)
+    while (true) {
+        val elapsed = measureNanoTime {
+            bench.registerAndUpdateMaxHighResPlayersWithMovement(blackhole)
+        }
+        println("Total took ${elapsed.toDouble() / 1_000_000}ms")
+    }
 }
