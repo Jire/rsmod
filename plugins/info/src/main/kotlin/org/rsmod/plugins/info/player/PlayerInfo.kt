@@ -139,11 +139,8 @@ public class PlayerInfo(public val playerLimit: Int = DEFAULT_PLAYER_LIMIT) {
         buf.clear()
         bitBuf.reset()
         bitBuf.use { it.putHighResolution(true, avatar.coords, client, metadata) }
-        bitBuf.reset()
         bitBuf.use { it.putHighResolution(false, avatar.coords, client, metadata) }
-        bitBuf.reset()
         bitBuf.use { it.putLowResolution(false, avatar.coords, client, metadata) }
-        bitBuf.reset()
         bitBuf.use { it.putLowResolution(true, avatar.coords, client, metadata) }
         buf.putExtendedInfo(metadata.extendedInfoCount, client.extendedInfoIndexes)
         shift(client)

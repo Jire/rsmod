@@ -2,6 +2,8 @@
 
 package org.rsmod.plugins.info.player
 
+import io.netty.buffer.ByteBufAllocator
+import io.netty.buffer.UnpooledUnsafeDirectByteBuf
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
@@ -18,6 +20,7 @@ import org.openjdk.jmh.annotations.Setup
 import org.openjdk.jmh.annotations.State
 import org.openjdk.jmh.annotations.Warmup
 import org.openjdk.jmh.infra.Blackhole
+import org.rsmod.plugins.info.buffer.FastBitBuf
 import org.rsmod.plugins.info.model.coord.HighResCoord
 import org.rsmod.plugins.info.player.PlayerInfo.Companion.CACHED_EXT_INFO_BUFFER_SIZE
 import java.nio.ByteBuffer
@@ -37,7 +40,7 @@ abstract class MultiThreadPlayerInfoBenchmark(
 ) {
 
     private lateinit var info: PlayerInfo
-    private lateinit var bufs: Array<ByteBuffer>
+    private lateinit var bufs: Array<FastBitBuf>
     private lateinit var staticExtInfo: ByteArray
     private lateinit var scope: CoroutineScope
 
@@ -50,7 +53,15 @@ abstract class MultiThreadPlayerInfoBenchmark(
         System.setProperty("io.netty.buffer.checkBounds", "false")
 
         info = PlayerInfo()
-        bufs = Array(info.capacity) { ByteBuffer.allocate(bufCapacity) }
+        bufs = Array(info.capacity) {
+            FastBitBuf(
+                UnpooledUnsafeDirectByteBuf(
+                    ByteBufAllocator.DEFAULT,
+                    bufCapacity,
+                    bufCapacity
+                )
+            )
+        }
         staticExtInfo = ByteArray(CACHED_EXT_INFO_BUFFER_SIZE)
         if (startInHighRes) {
             for (i in info.indices) {
@@ -71,7 +82,8 @@ abstract class MultiThreadPlayerInfoBenchmark(
         launch(scope.coroutineContext) {
             for (i in info.indices) {
                 launch {
-                    bh.consume(info.put(bufs[i], i))
+                    val buf = bufs[i]
+                    bh.consume(info.put(buf.buf, buf, i))
                 }
             }
         }.join()
@@ -89,7 +101,8 @@ abstract class MultiThreadPlayerInfoBenchmark(
         launch(scope.coroutineContext) {
             for (i in info.indices) {
                 launch {
-                    bh.consume(info.put(bufs[i], i))
+                    val buf = bufs[i]
+                    bh.consume(info.put(buf.buf, buf, i))
                 }
             }
         }.join()
@@ -110,7 +123,8 @@ abstract class MultiThreadPlayerInfoBenchmark(
         launch(scope.coroutineContext) {
             for (i in info.indices) {
                 launch {
-                    bh.consume(info.put(bufs[i], i))
+                    val buf = bufs[i]
+                    bh.consume(info.put(buf.buf, buf, i))
                 }
             }
         }.join()
